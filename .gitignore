@@ -1,0 +1,8 @@
+# Ignore VisualStudio stuff
+
+obj/
+bin/
+.vs/
+
+PseudoGingaServer.sln
+.editorconfig
