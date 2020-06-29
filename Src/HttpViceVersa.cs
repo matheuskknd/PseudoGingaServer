@@ -5,8 +5,9 @@ using System.Text;
 using System.Net;
 using System;
 using System.Collections.Specialized;
-using System.Net.Http.Headers;
 
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
 
 class HttpViceVersa : IDisposable{
 
@@ -83,12 +84,14 @@ class HttpViceVersa : IDisposable{
 // ######### HTTP request #########
 // ################################
 
-	public struct ParsedReceivedRequest{
+	public class ParsedReceivedRequest{
 
 		public NameValueCollection Headers { get; }
-		public string Body { get; }
+		public JObject Body { get; }
 
 		public bool IsLengthWrong { get; }
+
+		public bool BadParsed { get; }
 
 		public bool ContainsHeader( string name){
 
@@ -113,8 +116,18 @@ class HttpViceVersa : IDisposable{
 			}while( aux != buff.Length && trials != 4 );
 
 			// Set the class properties
-			this.IsLengthWrong = aux != buff.Length || request.ContentLength64 != aux;
-			this.Body = request.ContentEncoding.GetString(buff,0,aux);
+			try{
+
+				this.Body = JObject.Parse(request.ContentEncoding.GetString(buff,0,aux));
+				this.BadParsed = false;
+
+			}catch( JsonException e){
+
+				this.Body = JObject.Parse("\"Error\":\"Bad json parse:\n\n" + e.ToString().Replace("\"","'") + "\"");
+				this.BadParsed = true;
+			}
+
+			this.IsLengthWrong = aux != buff.Length;
 			this.Headers = request.Headers;
 		}
 	}
@@ -129,11 +142,13 @@ class HttpViceVersa : IDisposable{
 	public struct ParsedPostRequestResponse{
 
 		public NameValueCollection ResponseHeaders { get; }
-		public string ResponseBody { get; }
+		public JObject ResponseBody { get; }
 
 		public Uri RequestUri { get; }
 
 		public bool IsLengthWrong { get; }
+
+		public bool BadParsed { get; }
 
 		public bool ContainsResponseHeader( string name){
 
@@ -144,22 +159,23 @@ class HttpViceVersa : IDisposable{
 			return false;
 		}
 
-		public ParsedPostRequestResponse( Uri _RequestUrl, NameValueCollection _ResponseHeaders, string _ResponseBody, bool _IsLengthWrong){
+		public ParsedPostRequestResponse( Uri _RequestUrl, NameValueCollection _ResponseHeaders, JObject _ResponseBody, bool _IsLengthWrong, bool _BadParsed){
 
 			this.ResponseHeaders = _ResponseHeaders;
 			this.IsLengthWrong = _IsLengthWrong;
 			this.ResponseBody = _ResponseBody;
 			this.RequestUri = _RequestUrl;
+			this.BadParsed = _BadParsed;
 		}
 	}
 
-	public ParsedPostRequestResponse Post( Uri url, string requestBody, Encoding encoder, Encoding decoder, Tuple<string,string>[] extraHeaders = null){
+	public ParsedPostRequestResponse Post( Uri url, JObject requestBody, Encoding encoder, Encoding decoder, Tuple<string,string>[] extraHeaders = null){
 
 		HttpResponseMessage response = null;
 
 		{
 			// Get the body content
-			byte[] body = encoder.GetBytes(requestBody != null ? requestBody : "");
+			byte[] body = encoder.GetBytes(requestBody != null ? requestBody.ToString() : "");
 
 			var request = new HttpRequestMessage(){
 
@@ -203,15 +219,29 @@ class HttpViceVersa : IDisposable{
 		foreach( var kpv in response.Content.Headers)
 			headers.Add(kpv.Key,string.Join(" ",kpv.Value));
 
-		return new ParsedPostRequestResponse(url,headers,decoder.GetString(bodyBytes),response.Content.Headers.ContentLength != bodyBytes.Length);
+		JObject parsedBody;
+		bool BadParsed;
+
+		try{
+
+			parsedBody = JObject.Parse(decoder.GetString(bodyBytes));
+			BadParsed = false;
+
+		}catch( JsonException e){
+
+			parsedBody = JObject.Parse("\"Error\":\"Bad json parse:\n\n" + e.ToString().Replace("\"","'") + "\"");
+			BadParsed = true;
+		}
+
+		return new ParsedPostRequestResponse(url,headers,parsedBody,response.Content.Headers.ContentLength != bodyBytes.Length,BadParsed);
 	}
 
 #endregion
 
-	public static void SendRequestResponse( HttpListenerResponse response, string responseBody, Encoding encoder, Tuple<string,string>[] extraHeaders = null){
+	public static void SendRequestResponse( HttpListenerResponse response, JObject responseBody, Encoding encoder, Tuple<string,string>[] extraHeaders = null){
 
 		// Create the body content
-		byte[] responseBodyBytes = encoder.GetBytes(responseBody);
+		byte[] responseBodyBytes = encoder.GetBytes(responseBody.ToString());
 
 		// Set the default headers
 		response.KeepAlive = true;
