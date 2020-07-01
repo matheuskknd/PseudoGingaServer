@@ -18,7 +18,7 @@ class ServerEmulator : IDisposable{
 	private LinkedList<Tuple<Uri,Socket>> clients = new LinkedList<Tuple<Uri,Socket>>();
 
 	// An instance of HttpViceVersa that can send requests and is also listenning to
-	public HttpViceVersa HttpViceVersa { get; }
+	private HttpBridge httpBridge;
 
 	// SSDP server listenning on port 1900
 	private Rssdp.Infrastructure.SsdpCommunicationsServer ssdpServer;
@@ -31,7 +31,7 @@ class ServerEmulator : IDisposable{
 	public ServerEmulator( Func<string,JObject,JObject> onEventReceived, Action<Uri> onClientConnected = null, Action<Uri> onClientDisconnected = null){
 
 		this.ssdpServer = new Rssdp.Infrastructure.SsdpCommunicationsServer(new Rssdp.SocketFactory(IPAddress.Any.ToString()),1900,1);
-		this.HttpViceVersa = new HttpViceVersa(this.OnHttpServerRequested,44642);
+		this.httpBridge = new HttpBridge(this.OnHttpServerRequested,44642);
 
 		this.OnClientDisconnected = onClientDisconnected;
 		this.OnClientConnected = onClientConnected;
@@ -74,7 +74,7 @@ class ServerEmulator : IDisposable{
 			}
 		}
 
-		this.HttpViceVersa.Dispose();
+		this.httpBridge.Dispose();
 	}
 
 // ################################
@@ -83,27 +83,34 @@ class ServerEmulator : IDisposable{
 
 	public void SendAction( JObject body = null){
 
+Console.WriteLine("SendAction: entrei");
+
 		lock(this.clients){
 
-			if( this.clients.Count != 0 )
-				foreach( var client in this.clients){
+Console.WriteLine("SendAction: travei this.clients!");
 
-					Task.Factory.StartNew(() => {
+			foreach( var client in this.clients){
 
-						var message = new JObject(new JProperty("message","Some action message"));
+				Task.Factory.StartNew(() => {
 
-						var postContext = this.HttpViceVersa.Post(
+Console.WriteLine("SendAction.Tarefa: Enviando POST!");
 
-							new Uri(client.Item1,"dtv/remote-mediaplayer/scene/nodes/node-id/"),
-							message,
-							Encoding.UTF8,
-							Encoding.UTF8,
-							new Tuple<string,string>[]{
+try{
 
-								Tuple.Create("Content-Type","application/json; charset=utf-8"),
-								Tuple.Create("Accept","application/json; charset=utf-8")
-							}
-						);
+					var message = new JObject(new JProperty("message","Some action message"));
+
+					var postContext = this.httpBridge.Post(
+
+						new Uri(client.Item1,"dtv/remote-mediaplayer/scene/nodes/node-id/"),
+						message,
+						Encoding.UTF8,
+						Encoding.UTF8,
+						new Tuple<string,string>[]{
+
+							Tuple.Create("Content-Type","application/json; charset=utf-8"),
+							Tuple.Create("Accept","application/json; charset=utf-8")
+						}
+					);
 
 // ################################
 Console.WriteLine("A response da POST request a: " + postContext.RequestUri.ToString() + " HEADERS:\n");
@@ -114,8 +121,13 @@ Console.WriteLine("Key: \"" + key + "\" Value: \"" + postContext.ResponseHeaders
 Console.WriteLine("\nBODY:\n\"" + postContext.ResponseBody + "\"");
 // ################################
 
-					});
-				}
+}catch( Exception e){
+
+	Console.WriteLine("Exceção em corrotina de envio de ação:\n\n" + e.ToString());
+}
+
+				});
+			}
 		}
 	}
 
@@ -227,7 +239,7 @@ Console.WriteLine("events: " + events);
 	public void OnHttpServerRequested( HttpListenerContext context){
 
 		// Get a parsed input
-		var parsedRequest = new HttpViceVersa.ParsedReceivedRequest(context.Request);
+		var parsedRequest = new HttpBridge.ParsedReceivedRequest(context.Request);
 
 
 
@@ -288,7 +300,7 @@ Console.WriteLine("\nBODY:\n\"" + parsedRequest.Body + "\"");
 		// ################################
 		// Send the output
 
-		HttpViceVersa.SendRequestResponse(context.Response,responseMsg,Encoding.UTF8,new Tuple<string,string>[]{
+		HttpBridge.SendRequestResponse(context.Response,responseMsg,Encoding.UTF8,new Tuple<string,string>[]{
 
 			Tuple.Create("Content-Type","application/json; charset=utf-8")
 		});
@@ -303,6 +315,11 @@ Console.WriteLine("\nBODY:\n\"" + parsedRequest.Body + "\"");
 		Console.WriteLine("Enrolando pra terminar a thread getRequest-sendResponse...");
 		Thread.Sleep(10000);
 		Console.WriteLine("Terminei!");
+	}
+
+	public HttpBridge.ParsedPostRequestResponse Post( Uri url, JObject requestBody, Tuple<string,string>[] extraHeaders = null){
+
+		return this.httpBridge.Post(url,requestBody,Encoding.UTF8,Encoding.UTF8,extraHeaders);
 	}
 
 #endregion
@@ -320,7 +337,7 @@ Console.WriteLine("\nBODY:\n\"" + parsedRequest.Body + "\"");
 		"USN: uuid:" + System.Guid.NewGuid().ToString() + "::urn:sbtvd-org:service:GingaCCWebServices:1\r\n" +
 		"EXT: \r\n" +
 		"SERVER: Roku UPnP/1.0 MiniUPnPd/1.4\r\n" +
-		"LOCATION: http://" + Dns.GetHostName() + ":44642/dtv/\r\n\r\n"
+		"LOCATION: http://192.168.2.50:44642/dtv/\r\n\r\n"
 	);
 
 	private static void OnSsdpServerRequested( object sender, Rssdp.Infrastructure.RequestReceivedEventArgs arg){

@@ -9,7 +9,7 @@ using System.Collections.Specialized;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json;
 
-class HttpViceVersa : IDisposable{
+class HttpBridge : IDisposable{
 
 	private static readonly Rssdp.Infrastructure.HttpResponseParser httpResponseParser = new Rssdp.Infrastructure.HttpResponseParser();
 	private static readonly Rssdp.Infrastructure.HttpRequestParser httpRequestParser = new Rssdp.Infrastructure.HttpRequestParser();
@@ -20,10 +20,9 @@ class HttpViceVersa : IDisposable{
 
 		PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
 		PooledConnectionLifetime = TimeSpan.MaxValue,
-		ConnectTimeout = TimeSpan.FromMinutes(1),
-		MaxConnectionsPerServer = 1,
+		ConnectTimeout = TimeSpan.FromSeconds(20),
+		MaxConnectionsPerServer = 65366,
 		AllowAutoRedirect = false
-
 	});
 
 	public int Port { get; }
@@ -37,7 +36,7 @@ class HttpViceVersa : IDisposable{
 		return port;
 	}
 
-	public HttpViceVersa( Action<HttpListenerContext> onHttpListenerContextGot, UInt16 listenPort = 0){
+	public HttpBridge( Action<HttpListenerContext> onHttpListenerContextGot, UInt16 listenPort = 0){
 
 		this.Port = listenPort != 0 ? listenPort : GetFreeTcpPort();
 		this.client.DefaultRequestHeaders.ConnectionClose = false;
@@ -171,6 +170,8 @@ class HttpViceVersa : IDisposable{
 
 	public ParsedPostRequestResponse Post( Uri url, JObject requestBody, Encoding encoder, Encoding decoder, Tuple<string,string>[] extraHeaders = null){
 
+Console.WriteLine("HttpBridge.Post: entrei");
+
 		HttpResponseMessage response = null;
 
 		{
@@ -203,8 +204,29 @@ class HttpViceVersa : IDisposable{
 			if( body.Length > 0 && !request.Content.Headers.Contains("Content-Type") )
 				throw new Exception("No content type specified for non empty request");
 
+try{
+
+Console.WriteLine("HttpBridge.Post: no try");
+
 			// Get the response using the request content object
-			response = this.client.SendAsync(request).Result;
+			var responseTask = this.client.SendAsync(request,CancellationToken.None);
+			responseTask.Wait();
+
+Console.WriteLine("HttpBridge.Post: recebi response");
+
+			if( !responseTask.IsFaulted )
+				response = responseTask.Result;
+
+			else
+				throw new Exception("Cliente não mandou resposta, provavelmente");
+
+}catch( Exception e){
+
+	Console.WriteLine("Erro ao enviar request e receber response para o Óculus:\n\n" + e.ToString());
+	return new ParsedPostRequestResponse(url,new NameValueCollection(),new JObject(),false,false);
+}
+
+
 		}
 
 		// Get the response body content

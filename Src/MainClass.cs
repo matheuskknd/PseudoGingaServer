@@ -8,55 +8,64 @@ class MainClass {
 
 	static void Main( string[] args){
 
-		Console.WriteLine("Iniciando servidor SSDP e ouvindo no multcast 239.255.255.250:1900!");
+		try{
 
-		// Create HTTP server listenning on "http://*:44642/dtv/" and a SSDP server
-		using( server = new ServerEmulator(null,OnClientConnected,null) ){
+			Console.WriteLine("Iniciando servidor SSDP e ouvindo no multcast 239.255.255.250:1900! VERSAO 2.0");
 
-			// Sleep waiting command
-			Action writeOutOptions = () => {
+			// Create HTTP server listenning on "http://*:44642/dtv/" and a SSDP server
+			using( server = new ServerEmulator(null,OnClientConnected,null) ){
 
-				Console.WriteLine("GINGA SERVER - Signal sending service");
-				Console.WriteLine("Commands");
-				Console.WriteLine("--------------------------------");
-				Console.WriteLine("S to send Signal");
-				Console.WriteLine("L to list all listeners");
-				Console.WriteLine("X to exit");
-				Console.WriteLine();
-			};
+				// Sleep waiting command
+				Action writeOutOptions = () => {
 
-			writeOutOptions();
-			var key = new ConsoleKeyInfo();
+					Console.WriteLine("GINGA SERVER - Signal sending service");
+					Console.WriteLine("Commands");
+					Console.WriteLine("--------------------------------");
+					Console.WriteLine("S to send Signal");
+					Console.WriteLine("L to list all listeners");
+					Console.WriteLine("X to exit");
+					Console.WriteLine();
+				};
 
-			while( true ){
+				writeOutOptions();
+				var key = new ConsoleKeyInfo();
 
-				Console.WriteLine();
-				Console.Write("Enter command: ");
-				key = Console.ReadKey();
-				Console.WriteLine();
-				Console.WriteLine();
+				while( true ){
 
-				string command = key.KeyChar.ToString().ToUpperInvariant();
+					Console.WriteLine();
+					Console.Write("Enter command: ");
+					key = Console.ReadKey();
+					Console.WriteLine();
+					Console.WriteLine();
 
-				switch( command ){
+					string command = key.KeyChar.ToString().ToUpperInvariant();
 
-					case "S":
-						server.SendAction();
-						break;
+					switch( command ){
 
-					case "L":
-						server.ListClients();
-						break;
+						case "S":
+							server.SendAction();
+							break;
 
-					case "X":
-						Environment.Exit(0);
-						break;
+						case "L":
+							server.ListClients();
+							break;
 
-					default:
-						Console.WriteLine("Unknown command. Press ? for a list of valid commands.");
-						break;
+						case "X":
+							Environment.Exit(0);
+							break;
+
+						default:
+							Console.WriteLine("Unknown command. Press ? for a list of valid commands.");
+							break;
+					}
 				}
 			}
+
+		}catch( Exception e){
+
+			Console.WriteLine("Main halted:\n\n" + e.ToString());
+			Console.ReadKey();
+			Environment.Exit(0);
 		}
 	}
 
@@ -66,6 +75,8 @@ class MainClass {
 	}
 
 	private static void OnClientConnected( Uri client){
+
+Console.WriteLine("OnClientConnected: Enviando POST!");
 
 		// The scene request message
 		var body = new JObject(
@@ -84,15 +95,25 @@ class MainClass {
 		);
 
 		// Send a scene to play
-		var postContext = server.HttpViceVersa.Post(new Uri(client,"dtv/remote-mediaplayer/scene/"),body,Encoding.UTF8,Encoding.UTF8,new Tuple<string,string>[]{
+		var postContext = server.Post(new Uri(client,"dtv/remote-mediaplayer/scene/"),body,new Tuple<string,string>[]{
 
 			Tuple.Create("Content-Type","application/json; charset=utf-8"),
 			Tuple.Create("Accept","application/json; charset=utf-8")
 		});
+
+// ################################
+Console.WriteLine("A response da POST request a: " + postContext.RequestUri.ToString() + " HEADERS:\n");
+
+foreach( var key in postContext.ResponseHeaders.AllKeys)
+Console.WriteLine("Key: \"" + key + "\" Value: \"" + postContext.ResponseHeaders[key] + "\"");
+
+Console.WriteLine("\nBODY:\n\"" + postContext.ResponseBody + "\"");
+// ################################
+
 	}
 
 	private static void OnClientDisconnected( Uri client){
 
-		throw new NotImplementedException();
+		Console.WriteLine("Cliente desconectado!");
 	}
 }
